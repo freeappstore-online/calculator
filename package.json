@@ -2,12 +2,23 @@
   "name": "calculator",
   "private": true,
   "packageManager": "pnpm@10.30.3",
-  "engines": { "node": ">=22" },
-  "pnpm": { "onlyBuiltDependencies": ["esbuild"] },
+  "engines": {
+    "node": ">=22"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
   "scripts": {
     "dev": "pnpm --filter @calculator/web dev",
     "build": "pnpm --filter @calculator/web build",
     "preview": "pnpm --filter @calculator/web preview",
-    "typecheck": "pnpm --filter @calculator/web exec tsc -b"
+    "typecheck": "pnpm --filter @calculator/web exec tsc -b",
+    "test": "pnpm --filter @calculator/web exec tsc -b"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/freeappstore-online/calculator.git"
   }
 }
