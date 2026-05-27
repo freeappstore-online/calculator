@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Shell } from './components/Shell'
-import { calc, factorial, cleanDisplay, canAddDecimal } from './calc'
+import { calc, factorial, cleanDisplay, canAddDecimal, toRad, fromRad } from './calc'
 
 export interface HistoryEntry {
   expression: string
@@ -39,14 +39,25 @@ function loadMode(): CalcMode {
 }
 
 export default function App() {
-  const [display, setDisplay] = useState(() => loadState()?.display ?? '0')
-  const [prev, setPrev] = useState<number | null>(() => loadState()?.prev ?? null)
-  const [op, setOp] = useState<string | null>(() => loadState()?.op ?? null)
+  const [display, setDisplay] = useState(() => {
+    const s = loadState()
+    return s?.display ?? '0'
+  })
+  const [prev, setPrev] = useState<number | null>(() => {
+    const s = loadState()
+    return s?.prev ?? null
+  })
+  const [op, setOp] = useState<string | null>(() => {
+    const s = loadState()
+    return s?.op ?? null
+  })
   const [fresh, setFresh] = useState(true)
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
   const [mode, setMode] = useState<CalcMode>(loadMode)
   const [useDeg, setUseDeg] = useState(true)
   const [inv, setInv] = useState(false)
+  const [lastOperand, setLastOperand] = useState<number | null>(null)
+  const [lastOp, setLastOp] = useState<string | null>(null)
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ display, prev, op }))
@@ -60,7 +71,14 @@ export default function App() {
     localStorage.setItem(MODE_KEY, mode)
   }, [mode])
 
+  const isError = display === 'Error'
+
   const input = (digit: string) => {
+    if (isError && !fresh) {
+      setDisplay(digit === '.' ? '0.' : digit)
+      setFresh(false)
+      return
+    }
     if (digit === '.' && !canAddDecimal(fresh ? '' : display)) return
     if (fresh) {
       setDisplay(digit === '.' ? '0.' : digit)
@@ -71,6 +89,7 @@ export default function App() {
   }
 
   const operate = (nextOp: string) => {
+    if (isError) return
     const current = parseFloat(display)
     if (prev !== null && op && !fresh) {
       const result = calc(prev, current, op)
@@ -81,21 +100,37 @@ export default function App() {
     }
     setOp(nextOp)
     setFresh(true)
+    setLastOperand(null)
+    setLastOp(null)
   }
 
   const equals = () => {
-    if (prev === null || !op) return
+    if (isError) return
     const current = parseFloat(display)
-    const result = calc(prev, current, op)
-    const resultStr = cleanDisplay(result)
-    setDisplay(resultStr)
-    setHistory(h => [
-      { expression: `${cleanDisplay(prev)} ${op} ${cleanDisplay(current)}`, result: resultStr, timestamp: Date.now() },
-      ...h,
-    ].slice(0, MAX_HISTORY))
-    setPrev(null)
-    setOp(null)
-    setFresh(true)
+
+    if (prev !== null && op) {
+      const result = calc(prev, current, op)
+      const resultStr = cleanDisplay(result)
+      setDisplay(resultStr)
+      setHistory(h => [
+        { expression: `${cleanDisplay(prev)} ${op} ${cleanDisplay(current)}`, result: resultStr, timestamp: Date.now() },
+        ...h,
+      ].slice(0, MAX_HISTORY))
+      setLastOperand(current)
+      setLastOp(op)
+      setPrev(null)
+      setOp(null)
+      setFresh(true)
+    } else if (lastOp && lastOperand !== null) {
+      const result = calc(current, lastOperand, lastOp)
+      const resultStr = cleanDisplay(result)
+      setDisplay(resultStr)
+      setHistory(h => [
+        { expression: `${cleanDisplay(current)} ${lastOp} ${cleanDisplay(lastOperand)}`, result: resultStr, timestamp: Date.now() },
+        ...h,
+      ].slice(0, MAX_HISTORY))
+      setFresh(true)
+    }
   }
 
   const clear = () => {
@@ -103,18 +138,23 @@ export default function App() {
     setPrev(null)
     setOp(null)
     setFresh(true)
+    setLastOperand(null)
+    setLastOp(null)
   }
 
   const percent = () => {
+    if (isError) return
     setDisplay(cleanDisplay(parseFloat(display) / 100))
     setFresh(true)
   }
 
   const negate = () => {
+    if (isError) return
     setDisplay(cleanDisplay(-parseFloat(display)))
   }
 
   const applyUnary = (label: string, fn: (x: number) => number) => {
+    if (isError) return
     const x = parseFloat(display)
     const result = fn(x)
     const resultStr = cleanDisplay(result)
@@ -126,8 +166,8 @@ export default function App() {
     setFresh(true)
   }
 
-  const toRad = (x: number) => useDeg ? (x * Math.PI) / 180 : x
-  const fromRad = (x: number) => useDeg ? (x * 180) / Math.PI : x
+  const degToRad = (x: number) => useDeg ? toRad(x) : x
+  const radToDeg = (x: number) => useDeg ? fromRad(x) : x
 
   const insertConstant = (value: number) => {
     setDisplay(cleanDisplay(value))
@@ -170,7 +210,7 @@ export default function App() {
             <div
               className="display-font mt-1 font-bold"
               style={{
-                color: 'var(--ink)',
+                color: isError ? 'var(--error)' : 'var(--ink)',
                 fontSize: display.length > 10 ? '1.5rem' : display.length > 7 ? '2rem' : '2.5rem',
               }}
             >
@@ -198,19 +238,19 @@ export default function App() {
               <CalcBtn label="x!" style="function" onClick={() => applyUnary('!', factorial)} small />
 
               {inv ? (
-                <CalcBtn label="sin⁻¹" style="function" onClick={() => applyUnary('asin', x => fromRad(Math.asin(x)))} small />
+                <CalcBtn label="sin⁻¹" style="function" onClick={() => applyUnary('asin', x => radToDeg(Math.asin(x)))} small />
               ) : (
-                <CalcBtn label="sin" style="function" onClick={() => applyUnary('sin', x => Math.sin(toRad(x)))} small />
+                <CalcBtn label="sin" style="function" onClick={() => applyUnary('sin', x => Math.sin(degToRad(x)))} small />
               )}
               {inv ? (
-                <CalcBtn label="cos⁻¹" style="function" onClick={() => applyUnary('acos', x => fromRad(Math.acos(x)))} small />
+                <CalcBtn label="cos⁻¹" style="function" onClick={() => applyUnary('acos', x => radToDeg(Math.acos(x)))} small />
               ) : (
-                <CalcBtn label="cos" style="function" onClick={() => applyUnary('cos', x => Math.cos(toRad(x)))} small />
+                <CalcBtn label="cos" style="function" onClick={() => applyUnary('cos', x => Math.cos(degToRad(x)))} small />
               )}
               {inv ? (
-                <CalcBtn label="tan⁻¹" style="function" onClick={() => applyUnary('atan', x => fromRad(Math.atan(x)))} small />
+                <CalcBtn label="tan⁻¹" style="function" onClick={() => applyUnary('atan', x => radToDeg(Math.atan(x)))} small />
               ) : (
-                <CalcBtn label="tan" style="function" onClick={() => applyUnary('tan', x => Math.tan(toRad(x)))} small />
+                <CalcBtn label="tan" style="function" onClick={() => applyUnary('tan', x => Math.tan(degToRad(x)))} small />
               )}
               {inv ? (
                 <CalcBtn label="eˣ" style="function" onClick={() => applyUnary('eˣ', x => Math.exp(x))} small />
@@ -227,7 +267,7 @@ export default function App() {
               <CalcBtn label="x²" style="function" onClick={() => applyUnary('x²', x => x * x)} small />
               <CalcBtn label="x³" style="function" onClick={() => applyUnary('x³', x => x * x * x)} small />
               <CalcBtn label="xʸ" style="operator" onClick={() => operate('xʸ')} active={op === 'xʸ' && fresh} small />
-              <CalcBtn label="1/x" style="function" onClick={() => applyUnary('1/', x => x !== 0 ? 1 / x : 0)} small />
+              <CalcBtn label="1/x" style="function" onClick={() => applyUnary('1/', x => x !== 0 ? 1 / x : NaN)} small />
             </div>
           )}
 
