@@ -1,11 +1,47 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Shell } from './components/Shell'
 
+export interface HistoryEntry {
+  expression: string
+  result: string
+  timestamp: number
+}
+
+const STORAGE_KEY = 'calculator-state'
+const HISTORY_KEY = 'calculator-history'
+const MAX_HISTORY = 50
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as { display: string; prev: number | null; op: string | null }
+  } catch { return null }
+}
+
+function loadHistory(): HistoryEntry[] {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY)
+    if (!raw) return []
+    return JSON.parse(raw) as HistoryEntry[]
+  } catch { return [] }
+}
+
 export default function App() {
-  const [display, setDisplay] = useState('0')
-  const [prev, setPrev] = useState<number | null>(null)
-  const [op, setOp] = useState<string | null>(null)
+  const saved = loadState()
+  const [display, setDisplay] = useState(saved?.display ?? '0')
+  const [prev, setPrev] = useState<number | null>(saved?.prev ?? null)
+  const [op, setOp] = useState<string | null>(saved?.op ?? null)
   const [fresh, setFresh] = useState(true)
+  const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ display, prev, op }))
+  }, [display, prev, op])
+
+  useEffect(() => {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history))
+  }, [history])
 
   const input = (digit: string) => {
     if (fresh) {
@@ -33,7 +69,12 @@ export default function App() {
     if (prev === null || !op) return
     const current = parseFloat(display)
     const result = calc(prev, current, op)
-    setDisplay(String(result))
+    const resultStr = String(result)
+    setDisplay(resultStr)
+    setHistory(h => [
+      { expression: `${prev} ${op} ${current}`, result: resultStr, timestamp: Date.now() },
+      ...h,
+    ].slice(0, MAX_HISTORY))
     setPrev(null)
     setOp(null)
     setFresh(true)
@@ -54,8 +95,19 @@ export default function App() {
     setDisplay(String(-parseFloat(display)))
   }
 
+  const clearHistory = useCallback(() => {
+    setHistory([])
+  }, [])
+
+  const loadFromHistory = useCallback((entry: HistoryEntry) => {
+    setDisplay(entry.result)
+    setPrev(null)
+    setOp(null)
+    setFresh(true)
+  }, [])
+
   return (
-    <Shell>
+    <Shell history={history} onClearHistory={clearHistory} onSelectHistory={loadFromHistory}>
       <div className="flex flex-1 items-center justify-center p-4">
         <div className="w-full max-w-xs">
           <div
@@ -63,7 +115,7 @@ export default function App() {
             style={{ background: 'var(--panel)', border: '1px solid var(--line)' }}
           >
             <div className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
-              {prev !== null ? `${prev} ${op}` : '\u00A0'}
+              {prev !== null ? `${prev} ${op}` : ' '}
             </div>
             <div
               className="display-font mt-1 font-bold"

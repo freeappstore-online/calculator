@@ -1,10 +1,74 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
+import type { HistoryEntry } from "../App";
 
 interface ShellProps {
   children: ReactNode;
+  history: HistoryEntry[];
+  onClearHistory: () => void;
+  onSelectHistory: (entry: HistoryEntry) => void;
 }
 
-export function Shell({ children }: ShellProps) {
+function formatTime(ts: number) {
+  const d = new Date(ts);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  if (isToday) {
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function HistoryList({ history, onClear, onSelect }: {
+  history: HistoryEntry[];
+  onClear: () => void;
+  onSelect: (entry: HistoryEntry) => void;
+}) {
+  if (history.length === 0) {
+    return (
+      <div className="px-4 py-8 text-center text-sm" style={{ color: "var(--muted)" }}>
+        No history yet
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1 px-3">
+      {history.map((entry, i) => (
+        <button
+          key={entry.timestamp + i}
+          onClick={() => onSelect(entry)}
+          className="rounded-lg px-3 py-2 text-left transition-colors hover:bg-[var(--glass)]"
+          style={{ border: "1px solid transparent" }}
+          onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--line)")}
+          onMouseLeave={e => (e.currentTarget.style.borderColor = "transparent")}
+        >
+          <div className="text-xs" style={{ color: "var(--muted)" }}>
+            {entry.expression}
+          </div>
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="font-semibold text-sm" style={{ color: "var(--ink)" }}>
+              = {entry.result}
+            </span>
+            <span className="text-[10px] shrink-0" style={{ color: "var(--muted)" }}>
+              {formatTime(entry.timestamp)}
+            </span>
+          </div>
+        </button>
+      ))}
+      <button
+        onClick={onClear}
+        className="mt-2 mb-1 rounded-lg px-3 py-2 text-xs font-medium transition-colors hover:bg-[var(--glass)]"
+        style={{ color: "var(--error)" }}
+      >
+        Clear history
+      </button>
+    </div>
+  );
+}
+
+export function Shell({ children, history, onClearHistory, onSelectHistory }: ShellProps) {
+  const [showHistory, setShowHistory] = useState(false);
+
   return (
     <>
       {/* Desktop: sidebar + main */}
@@ -20,8 +84,11 @@ export function Shell({ children }: ShellProps) {
           <div className="p-6 font-bold text-lg" style={{ fontFamily: "Fraunces, serif" }}>
             calculator
           </div>
-          <nav className="flex-1 px-4">
-            {/* Add nav items here */}
+          <div className="px-4 pb-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
+            History
+          </div>
+          <nav className="flex-1 overflow-auto">
+            <HistoryList history={history} onClear={onClearHistory} onSelect={onSelectHistory} />
           </nav>
           <div className="p-4 text-xs" style={{ color: "var(--muted)" }}>
             <a
@@ -41,14 +108,34 @@ export function Shell({ children }: ShellProps) {
       {/* Mobile: header + main + dock */}
       <div className="flex flex-col h-screen md:hidden">
         <header
-          className="flex items-center px-4 h-14 border-b shrink-0"
+          className="flex items-center justify-between px-4 h-14 border-b shrink-0"
           style={{ borderColor: "var(--line)", background: "var(--panel)" }}
         >
           <span className="font-bold" style={{ fontFamily: "Fraunces, serif" }}>
             calculator
           </span>
+          <button
+            onClick={() => setShowHistory(!showHistory)}
+            className="rounded-lg px-3 py-1 text-xs font-medium transition-colors"
+            style={{
+              color: showHistory ? "var(--paper)" : "var(--accent)",
+              background: showHistory ? "var(--accent)" : "transparent",
+              border: `1px solid ${showHistory ? "var(--accent)" : "var(--line)"}`,
+            }}
+          >
+            History{history.length > 0 ? ` (${history.length})` : ""}
+          </button>
         </header>
-        <main className="flex-1 overflow-auto p-4">{children}</main>
+        {showHistory ? (
+          <main className="flex-1 overflow-auto py-2">
+            <HistoryList history={history} onClear={onClearHistory} onSelect={(entry) => {
+              onSelectHistory(entry);
+              setShowHistory(false);
+            }} />
+          </main>
+        ) : (
+          <main className="flex-1 overflow-auto p-4">{children}</main>
+        )}
         <nav
           className="flex items-center justify-around h-16 border-t shrink-0"
           style={{
