@@ -9,12 +9,14 @@ export interface HistoryEntry {
 }
 
 export type CalcMode = 'basic' | 'scientific'
+export type AppTab = 'calculator' | 'converter'
 
 const STORAGE_KEY = 'calculator-state'
 const HISTORY_KEY = 'calculator-history'
 const MODE_KEY = 'calculator-mode'
 const MEMORY_KEY = 'calculator-memory'
 const MAX_HISTORY = 50
+const MAX_UNDO = 30
 
 interface CalcState {
   display: string
@@ -25,6 +27,13 @@ interface CalcState {
 interface ParenFrame {
   prev: number | null
   op: string | null
+}
+
+interface UndoSnapshot {
+  display: string
+  prev: number | null
+  op: string | null
+  fresh: boolean
 }
 
 function loadState(): CalcState | null {
@@ -59,6 +68,23 @@ function loadMemory(): number {
   } catch { return 0 }
 }
 
+function haptic() {
+  navigator.vibrate?.(8)
+}
+
+function useLandscape() {
+  const [landscape, setLandscape] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(orientation: landscape) and (max-height: 500px)').matches
+  )
+  useEffect(() => {
+    const mq = window.matchMedia('(orientation: landscape) and (max-height: 500px)')
+    const handler = (e: MediaQueryListEvent) => setLandscape(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+  return landscape
+}
+
 export default function App() {
   const [display, setDisplay] = useState(() => loadState()?.display ?? '0')
   const [prev, setPrev] = useState<number | null>(() => loadState()?.prev ?? null)
@@ -73,7 +99,12 @@ export default function App() {
   const [memory, setMemory] = useState(loadMemory)
   const [parenStack, setParenStack] = useState<ParenFrame[]>([])
   const [copied, setCopied] = useState(false)
+  const [tab, setTab] = useState<AppTab>('calculator')
   const displayRef = useRef<HTMLDivElement>(null)
+  const undoStack = useRef<UndoSnapshot[]>([])
+  const isLandscape = useLandscape()
+
+  const showScientific = mode === 'scientific' || isLandscape
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ display, prev, op }))
@@ -93,7 +124,26 @@ export default function App() {
 
   const isError = display === 'Error'
 
+  const pushUndo = useCallback(() => {
+    undoStack.current = [
+      { display, prev, op, fresh },
+      ...undoStack.current,
+    ].slice(0, MAX_UNDO)
+  }, [display, prev, op, fresh])
+
+  const undo = useCallback(() => {
+    const snapshot = undoStack.current[0]
+    if (!snapshot) return
+    undoStack.current = undoStack.current.slice(1)
+    setDisplay(snapshot.display)
+    setPrev(snapshot.prev)
+    setOp(snapshot.op)
+    setFresh(snapshot.fresh)
+  }, [])
+
   const input = useCallback((digit: string) => {
+    haptic()
+    pushUndo()
     if (isError && !fresh) {
       setDisplay(digit === '.' ? '0.' : digit)
       setFresh(false)
@@ -106,10 +156,12 @@ export default function App() {
     } else {
       setDisplay(display === '0' && digit !== '.' ? digit : display + digit)
     }
-  }, [display, fresh, isError])
+  }, [display, fresh, isError, pushUndo])
 
   const operate = useCallback((nextOp: string) => {
+    haptic()
     if (isError) return
+    pushUndo()
     const current = parseFloat(display)
     if (prev !== null && op && !fresh) {
       const result = calc(prev, current, op)
@@ -122,10 +174,12 @@ export default function App() {
     setFresh(true)
     setLastOperand(null)
     setLastOp(null)
-  }, [display, fresh, isError, op, prev])
+  }, [display, fresh, isError, op, prev, pushUndo])
 
   const equals = useCallback(() => {
+    haptic()
     if (isError) return
+    pushUndo()
     const current = parseFloat(display)
 
     if (prev !== null && op) {
@@ -151,9 +205,11 @@ export default function App() {
       ].slice(0, MAX_HISTORY))
       setFresh(true)
     }
-  }, [display, isError, lastOp, lastOperand, op, prev])
+  }, [display, isError, lastOp, lastOperand, op, prev, pushUndo])
 
   const clear = useCallback(() => {
+    haptic()
+    pushUndo()
     setDisplay('0')
     setPrev(null)
     setOp(null)
@@ -161,26 +217,34 @@ export default function App() {
     setLastOperand(null)
     setLastOp(null)
     setParenStack([])
-  }, [])
+  }, [pushUndo])
 
   const percent = useCallback(() => {
+    haptic()
     if (isError) return
+    pushUndo()
     setDisplay(cleanDisplay(parseFloat(display) / 100))
     setFresh(true)
-  }, [display, isError])
+  }, [display, isError, pushUndo])
 
   const negate = useCallback(() => {
+    haptic()
     if (isError) return
+    pushUndo()
     setDisplay(cleanDisplay(-parseFloat(display)))
-  }, [display, isError])
+  }, [display, isError, pushUndo])
 
   const handleBackspace = useCallback(() => {
+    haptic()
     if (isError || fresh) return
+    pushUndo()
     setDisplay(backspace(display))
-  }, [display, fresh, isError])
+  }, [display, fresh, isError, pushUndo])
 
   const applyUnary = useCallback((label: string, fn: (x: number) => number) => {
+    haptic()
     if (isError) return
+    pushUndo()
     const x = parseFloat(display)
     const result = fn(x)
     const resultStr = cleanDisplay(result)
@@ -190,40 +254,49 @@ export default function App() {
       ...h,
     ].slice(0, MAX_HISTORY))
     setFresh(true)
-  }, [display, isError])
+  }, [display, isError, pushUndo])
 
   const degToRad = useCallback((x: number) => useDeg ? toRad(x) : x, [useDeg])
   const radToDeg = useCallback((x: number) => useDeg ? fromRad(x) : x, [useDeg])
 
   const insertConstant = useCallback((value: number) => {
+    haptic()
+    pushUndo()
     setDisplay(cleanDisplay(value))
     setFresh(true)
-  }, [])
+  }, [pushUndo])
 
-  const memoryClear = useCallback(() => setMemory(0), [])
+  const memoryClear = useCallback(() => { haptic(); setMemory(0) }, [])
   const memoryRecall = useCallback(() => {
+    haptic(); pushUndo()
     setDisplay(cleanDisplay(memory))
     setFresh(true)
-  }, [memory])
+  }, [memory, pushUndo])
   const memoryAdd = useCallback(() => {
+    haptic()
     if (isError) return
     setMemory(m => m + parseFloat(display))
   }, [display, isError])
   const memorySub = useCallback(() => {
+    haptic()
     if (isError) return
     setMemory(m => m - parseFloat(display))
   }, [display, isError])
 
   const openParen = useCallback(() => {
+    haptic()
     if (isError) return
+    pushUndo()
     setParenStack(s => [...s, { prev, op }])
     setPrev(null)
     setOp(null)
     setFresh(true)
-  }, [isError, prev, op])
+  }, [isError, prev, op, pushUndo])
 
   const closeParen = useCallback(() => {
+    haptic()
     if (isError || parenStack.length === 0) return
+    pushUndo()
     const current = parseFloat(display)
     let result = current
     if (prev !== null && op) {
@@ -235,7 +308,7 @@ export default function App() {
     setPrev(frame.prev)
     setOp(frame.op)
     setFresh(true)
-  }, [display, isError, op, parenStack, prev])
+  }, [display, isError, op, parenStack, prev, pushUndo])
 
   const copyDisplay = useCallback(async () => {
     try {
@@ -250,17 +323,19 @@ export default function App() {
       const text = await navigator.clipboard.readText()
       const n = parseFloat(text.trim())
       if (Number.isFinite(n)) {
+        pushUndo()
         setDisplay(cleanDisplay(n))
         setFresh(true)
       }
     } catch { /* clipboard not available */ }
-  }, [])
+  }, [pushUndo])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       const meta = e.metaKey || e.ctrlKey
 
+      if (meta && e.key === 'z') { e.preventDefault(); undo(); return }
       if (meta && e.key === 'c') { copyDisplay(); return }
       if (meta && e.key === 'v') { e.preventDefault(); pasteFromClipboard(); return }
 
@@ -283,7 +358,7 @@ export default function App() {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [input, operate, equals, clear, handleBackspace, percent, openParen, closeParen, copyDisplay, pasteFromClipboard])
+  }, [input, operate, equals, clear, handleBackspace, percent, openParen, closeParen, copyDisplay, pasteFromClipboard, undo])
 
   const clearHistory = useCallback(() => setHistory([]), [])
 
@@ -292,11 +367,12 @@ export default function App() {
   }, [])
 
   const loadFromHistory = useCallback((entry: HistoryEntry) => {
+    pushUndo()
     setDisplay(entry.result)
     setPrev(null)
     setOp(null)
     setFresh(true)
-  }, [])
+  }, [pushUndo])
 
   const toggleMode = useCallback((m: CalcMode) => {
     setMode(m)
@@ -313,127 +389,134 @@ export default function App() {
       onSelectHistory={loadFromHistory}
       mode={mode}
       onModeChange={toggleMode}
+      tab={tab}
+      onTabChange={setTab}
     >
-      <div className="flex flex-1 justify-center p-2 md:p-4 overflow-auto">
-        <div className={`my-auto ${mode === 'scientific' ? 'w-full max-w-sm' : 'w-full max-w-xs'}`}>
-          {/* Display */}
-          <div
-            ref={displayRef}
-            className="relative mb-2 md:mb-4 rounded-2xl px-4 py-3 md:px-5 md:py-4 text-right cursor-pointer select-none"
-            style={{ background: 'var(--panel)', border: '1px solid var(--line)' }}
-            onClick={copyDisplay}
-            title="Click to copy"
-          >
-            <div className="flex items-center justify-between">
-              <div className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
-                {parenDepth > 0 && <span style={{ color: 'var(--accent)' }}>{'('.repeat(parenDepth)} </span>}
-                {prev !== null ? `${cleanDisplay(prev)} ${op}` : ' '}
+      {tab === 'calculator' ? (
+        <div className={`flex flex-1 justify-center p-2 md:p-4 overflow-auto ${isLandscape ? 'landscape-calc' : ''}`}>
+          <div className={`my-auto ${showScientific ? 'w-full max-w-lg' : 'w-full max-w-xs'}`}>
+            {/* Display */}
+            <div
+              ref={displayRef}
+              className="relative mb-2 md:mb-4 rounded-2xl px-4 py-3 md:px-5 md:py-4 text-right cursor-pointer select-none"
+              style={{ background: 'var(--panel)', border: '1px solid var(--line)' }}
+              onClick={copyDisplay}
+              title="Click to copy · Ctrl+Z to undo"
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
+                  {parenDepth > 0 && <span style={{ color: 'var(--accent)' }}>{'('.repeat(parenDepth)} </span>}
+                  {prev !== null ? `${cleanDisplay(prev)} ${op}` : ' '}
+                </div>
+                {!fresh && !isError && (
+                  <button
+                    className="rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-[var(--glass)]"
+                    style={{ color: 'var(--muted)' }}
+                    onClick={(e) => { e.stopPropagation(); handleBackspace() }}
+                    title="Backspace"
+                  >
+                    ⌫
+                  </button>
+                )}
               </div>
-              {!fresh && !isError && (
-                <button
-                  className="rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-[var(--glass)]"
-                  style={{ color: 'var(--muted)' }}
-                  onClick={(e) => { e.stopPropagation(); handleBackspace() }}
-                  title="Backspace"
+              <div
+                className="display-font mt-1 font-bold"
+                style={{
+                  color: isError ? 'var(--error)' : 'var(--ink)',
+                  fontSize: display.length > 10 ? '1.5rem' : display.length > 7 ? '2rem' : '2.5rem',
+                }}
+              >
+                {display}
+              </div>
+              {copied && (
+                <div
+                  className="absolute top-2 right-2 rounded-md px-2 py-0.5 text-[10px] font-medium"
+                  style={{ background: 'var(--success)', color: 'white' }}
                 >
-                  ⌫
-                </button>
+                  Copied
+                </div>
               )}
             </div>
-            <div
-              className="display-font mt-1 font-bold"
-              style={{
-                color: isError ? 'var(--error)' : 'var(--ink)',
-                fontSize: display.length > 10 ? '1.5rem' : display.length > 7 ? '2rem' : '2.5rem',
-              }}
-            >
-              {display}
+
+            {/* Memory bar */}
+            <div className={`grid gap-1 md:gap-1.5 mb-1.5 md:mb-2 ${showScientific ? 'grid-cols-6' : 'grid-cols-4'}`}>
+              <CalcBtn label="MC" style="function" onClick={memoryClear} small />
+              <CalcBtn label="MR" style="function" onClick={memoryRecall} small active={memory !== 0} />
+              <CalcBtn label="M+" style="function" onClick={memoryAdd} small />
+              <CalcBtn label="M−" style="function" onClick={memorySub} small />
+              {showScientific && (
+                <>
+                  <CalcBtn label="(" style="function" onClick={openParen} small shortcut="(" />
+                  <CalcBtn label=")" style="function" onClick={closeParen} small active={parenDepth > 0} shortcut=")" />
+                </>
+              )}
             </div>
-            {copied && (
-              <div
-                className="absolute top-2 right-2 rounded-md px-2 py-0.5 text-[10px] font-medium"
-                style={{ background: 'var(--success)', color: 'white' }}
-              >
-                Copied
+
+            {/* Landscape: side-by-side layout */}
+            <div className={isLandscape ? 'flex gap-2' : ''}>
+              {/* Scientific buttons */}
+              {showScientific && (
+                <div className={`grid grid-cols-5 gap-1 md:gap-1.5 ${isLandscape ? 'flex-1' : 'mb-1.5 md:mb-2'}`}>
+                  <CalcBtn label="2nd" style="function" onClick={() => { haptic(); setInv(!inv) }} active={inv} small />
+                  <CalcBtn label={useDeg ? 'DEG' : 'RAD'} style="function" onClick={() => { haptic(); setUseDeg(!useDeg) }} small />
+                  <CalcBtn label="π" style="function" onClick={() => insertConstant(Math.PI)} small />
+                  <CalcBtn label="e" style="function" onClick={() => insertConstant(Math.E)} small />
+                  <CalcBtn label="x!" style="function" onClick={() => applyUnary('!', factorial)} small />
+
+                  {inv
+                    ? <CalcBtn label="sin⁻¹" style="function" onClick={() => applyUnary('asin', x => radToDeg(Math.asin(x)))} small />
+                    : <CalcBtn label="sin" style="function" onClick={() => applyUnary('sin', x => Math.sin(degToRad(x)))} small />}
+                  {inv
+                    ? <CalcBtn label="cos⁻¹" style="function" onClick={() => applyUnary('acos', x => radToDeg(Math.acos(x)))} small />
+                    : <CalcBtn label="cos" style="function" onClick={() => applyUnary('cos', x => Math.cos(degToRad(x)))} small />}
+                  {inv
+                    ? <CalcBtn label="tan⁻¹" style="function" onClick={() => applyUnary('atan', x => radToDeg(Math.atan(x)))} small />
+                    : <CalcBtn label="tan" style="function" onClick={() => applyUnary('tan', x => Math.tan(degToRad(x)))} small />}
+                  {inv
+                    ? <CalcBtn label="eˣ" style="function" onClick={() => applyUnary('eˣ', x => Math.exp(x))} small />
+                    : <CalcBtn label="ln" style="function" onClick={() => applyUnary('ln', Math.log)} small />}
+                  {inv
+                    ? <CalcBtn label="10ˣ" style="function" onClick={() => applyUnary('10ˣ', x => Math.pow(10, x))} small />
+                    : <CalcBtn label="log" style="function" onClick={() => applyUnary('log', Math.log10)} small />}
+
+                  <CalcBtn label="√" style="function" onClick={() => applyUnary('√', Math.sqrt)} small />
+                  <CalcBtn label="x²" style="function" onClick={() => applyUnary('x²', x => x * x)} small />
+                  <CalcBtn label="x³" style="function" onClick={() => applyUnary('x³', x => x * x * x)} small />
+                  <CalcBtn label="xʸ" style="operator" onClick={() => operate('xʸ')} active={op === 'xʸ' && fresh} small shortcut="^" />
+                  <CalcBtn label="1/x" style="function" onClick={() => applyUnary('1/', x => x !== 0 ? 1 / x : NaN)} small />
+                </div>
+              )}
+
+              {/* Main grid */}
+              <div className={`grid grid-cols-4 gap-1.5 md:gap-2 ${isLandscape ? 'flex-1' : ''}`}>
+                <CalcBtn label="AC" style="function" onClick={clear} shortcut="Esc" />
+                <CalcBtn label="+/−" style="function" onClick={negate} />
+                <CalcBtn label="%" style="function" onClick={percent} shortcut="%" />
+                <CalcBtn label="÷" style="operator" onClick={() => operate('÷')} active={op === '÷' && fresh} shortcut="/" />
+
+                <CalcBtn label="7" onClick={() => input('7')} shortcut="7" />
+                <CalcBtn label="8" onClick={() => input('8')} shortcut="8" />
+                <CalcBtn label="9" onClick={() => input('9')} shortcut="9" />
+                <CalcBtn label="×" style="operator" onClick={() => operate('×')} active={op === '×' && fresh} shortcut="*" />
+
+                <CalcBtn label="4" onClick={() => input('4')} shortcut="4" />
+                <CalcBtn label="5" onClick={() => input('5')} shortcut="5" />
+                <CalcBtn label="6" onClick={() => input('6')} shortcut="6" />
+                <CalcBtn label="−" style="operator" onClick={() => operate('−')} active={op === '−' && fresh} shortcut="-" />
+
+                <CalcBtn label="1" onClick={() => input('1')} shortcut="1" />
+                <CalcBtn label="2" onClick={() => input('2')} shortcut="2" />
+                <CalcBtn label="3" onClick={() => input('3')} shortcut="3" />
+                <CalcBtn label="+" style="operator" onClick={() => operate('+')} active={op === '+' && fresh} shortcut="+" />
+
+                <CalcBtn label="0" onClick={() => input('0')} wide shortcut="0" />
+                <CalcBtn label="." onClick={() => input('.')} shortcut="." />
+                <CalcBtn label="=" style="operator" onClick={equals} shortcut="Enter" />
               </div>
-            )}
-          </div>
-
-          {/* Memory bar */}
-          <div className={`grid gap-1 md:gap-1.5 mb-1.5 md:mb-2 ${mode === 'scientific' ? 'grid-cols-6' : 'grid-cols-4'}`}>
-            <CalcBtn label="MC" style="function" onClick={memoryClear} small />
-            <CalcBtn label="MR" style="function" onClick={memoryRecall} small active={memory !== 0} />
-            <CalcBtn label="M+" style="function" onClick={memoryAdd} small />
-            <CalcBtn label="M−" style="function" onClick={memorySub} small />
-            {mode === 'scientific' && (
-              <>
-                <CalcBtn label="(" style="function" onClick={openParen} small shortcut="(" />
-                <CalcBtn label=")" style="function" onClick={closeParen} small active={parenDepth > 0} shortcut=")" />
-              </>
-            )}
-          </div>
-
-          {/* Scientific buttons */}
-          {mode === 'scientific' && (
-            <div className="grid grid-cols-5 gap-1 md:gap-1.5 mb-1.5 md:mb-2">
-              <CalcBtn label="2nd" style="function" onClick={() => setInv(!inv)} active={inv} small />
-              <CalcBtn label={useDeg ? 'DEG' : 'RAD'} style="function" onClick={() => setUseDeg(!useDeg)} small />
-              <CalcBtn label="π" style="function" onClick={() => insertConstant(Math.PI)} small />
-              <CalcBtn label="e" style="function" onClick={() => insertConstant(Math.E)} small />
-              <CalcBtn label="x!" style="function" onClick={() => applyUnary('!', factorial)} small />
-
-              {inv
-                ? <CalcBtn label="sin⁻¹" style="function" onClick={() => applyUnary('asin', x => radToDeg(Math.asin(x)))} small />
-                : <CalcBtn label="sin" style="function" onClick={() => applyUnary('sin', x => Math.sin(degToRad(x)))} small />}
-              {inv
-                ? <CalcBtn label="cos⁻¹" style="function" onClick={() => applyUnary('acos', x => radToDeg(Math.acos(x)))} small />
-                : <CalcBtn label="cos" style="function" onClick={() => applyUnary('cos', x => Math.cos(degToRad(x)))} small />}
-              {inv
-                ? <CalcBtn label="tan⁻¹" style="function" onClick={() => applyUnary('atan', x => radToDeg(Math.atan(x)))} small />
-                : <CalcBtn label="tan" style="function" onClick={() => applyUnary('tan', x => Math.tan(degToRad(x)))} small />}
-              {inv
-                ? <CalcBtn label="eˣ" style="function" onClick={() => applyUnary('eˣ', x => Math.exp(x))} small />
-                : <CalcBtn label="ln" style="function" onClick={() => applyUnary('ln', Math.log)} small />}
-              {inv
-                ? <CalcBtn label="10ˣ" style="function" onClick={() => applyUnary('10ˣ', x => Math.pow(10, x))} small />
-                : <CalcBtn label="log" style="function" onClick={() => applyUnary('log', Math.log10)} small />}
-
-              <CalcBtn label="√" style="function" onClick={() => applyUnary('√', Math.sqrt)} small />
-              <CalcBtn label="x²" style="function" onClick={() => applyUnary('x²', x => x * x)} small />
-              <CalcBtn label="x³" style="function" onClick={() => applyUnary('x³', x => x * x * x)} small />
-              <CalcBtn label="xʸ" style="operator" onClick={() => operate('xʸ')} active={op === 'xʸ' && fresh} small shortcut="^" />
-              <CalcBtn label="1/x" style="function" onClick={() => applyUnary('1/', x => x !== 0 ? 1 / x : NaN)} small />
             </div>
-          )}
-
-          {/* Main grid */}
-          <div className="grid grid-cols-4 gap-1.5 md:gap-2">
-            <CalcBtn label="AC" style="function" onClick={clear} shortcut="Esc" />
-            <CalcBtn label="+/−" style="function" onClick={negate} />
-            <CalcBtn label="%" style="function" onClick={percent} shortcut="%" />
-            <CalcBtn label="÷" style="operator" onClick={() => operate('÷')} active={op === '÷' && fresh} shortcut="/" />
-
-            <CalcBtn label="7" onClick={() => input('7')} shortcut="7" />
-            <CalcBtn label="8" onClick={() => input('8')} shortcut="8" />
-            <CalcBtn label="9" onClick={() => input('9')} shortcut="9" />
-            <CalcBtn label="×" style="operator" onClick={() => operate('×')} active={op === '×' && fresh} shortcut="*" />
-
-            <CalcBtn label="4" onClick={() => input('4')} shortcut="4" />
-            <CalcBtn label="5" onClick={() => input('5')} shortcut="5" />
-            <CalcBtn label="6" onClick={() => input('6')} shortcut="6" />
-            <CalcBtn label="−" style="operator" onClick={() => operate('−')} active={op === '−' && fresh} shortcut="-" />
-
-            <CalcBtn label="1" onClick={() => input('1')} shortcut="1" />
-            <CalcBtn label="2" onClick={() => input('2')} shortcut="2" />
-            <CalcBtn label="3" onClick={() => input('3')} shortcut="3" />
-            <CalcBtn label="+" style="operator" onClick={() => operate('+')} active={op === '+' && fresh} shortcut="+" />
-
-            <CalcBtn label="0" onClick={() => input('0')} wide shortcut="0" />
-            <CalcBtn label="." onClick={() => input('.')} shortcut="." />
-            <CalcBtn label="=" style="operator" onClick={equals} shortcut="Enter" />
           </div>
         </div>
-      </div>
+      ) : null}
     </Shell>
   )
 }

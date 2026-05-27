@@ -1,5 +1,6 @@
 import { type ReactNode, useState, useRef, useCallback } from "react";
-import type { HistoryEntry, CalcMode } from "../App";
+import type { HistoryEntry, CalcMode, AppTab } from "../App";
+import { Converter } from "./Converter";
 
 interface ShellProps {
   children: ReactNode;
@@ -9,6 +10,8 @@ interface ShellProps {
   onSelectHistory: (entry: HistoryEntry) => void;
   mode: CalcMode;
   onModeChange: (mode: CalcMode) => void;
+  tab: AppTab;
+  onTabChange: (tab: AppTab) => void;
 }
 
 function formatTime(ts: number) {
@@ -176,7 +179,25 @@ function ModeToggle({ mode, onChange }: { mode: CalcMode; onChange: (m: CalcMode
   );
 }
 
-export function Shell({ children, history, onClearHistory, onDeleteEntry, onSelectHistory, mode, onModeChange }: ShellProps) {
+function TabBar({ tab, onChange }: { tab: AppTab; onChange: (t: AppTab) => void }) {
+  return (
+    <div className="flex items-center justify-around h-full">
+      {(["calculator", "converter"] as const).map(t => (
+        <button
+          key={t}
+          onClick={() => onChange(t)}
+          className="flex flex-col items-center gap-0.5 px-4 py-1 text-[10px] font-medium capitalize transition-colors"
+          style={{ color: tab === t ? "var(--accent)" : "var(--muted)" }}
+        >
+          <span className="text-base">{t === "calculator" ? "🔢" : "🔄"}</span>
+          {t}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function Shell({ children, history, onClearHistory, onDeleteEntry, onSelectHistory, mode, onModeChange, tab, onTabChange }: ShellProps) {
   const [showHistory, setShowHistory] = useState(false);
 
   return (
@@ -194,15 +215,43 @@ export function Shell({ children, history, onClearHistory, onDeleteEntry, onSele
           <div className="p-6 font-bold text-lg" style={{ fontFamily: "Fraunces, serif" }}>
             calculator
           </div>
+          {/* Desktop tab selector */}
           <div className="px-4 pb-3">
-            <ModeToggle mode={mode} onChange={onModeChange} />
+            <div
+              className="flex rounded-lg p-0.5 text-xs font-medium"
+              style={{ background: "var(--glass)", border: "1px solid var(--line)" }}
+            >
+              {(["calculator", "converter"] as const).map(t => (
+                <button
+                  key={t}
+                  onClick={() => onTabChange(t)}
+                  className="flex-1 rounded-md px-3 py-1 transition-colors capitalize"
+                  style={{
+                    background: tab === t ? "var(--accent)" : "transparent",
+                    color: tab === t ? "white" : "var(--muted)",
+                  }}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="px-4 pb-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
-            History
-          </div>
-          <nav className="flex-1 overflow-auto">
-            <HistoryList history={history} onClear={onClearHistory} onSelect={onSelectHistory} onDelete={onDeleteEntry} />
-          </nav>
+          {tab === "calculator" && (
+            <>
+              <div className="px-4 pb-3">
+                <ModeToggle mode={mode} onChange={onModeChange} />
+              </div>
+              <div className="px-4 pb-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
+                History
+              </div>
+              <nav className="flex-1 overflow-auto">
+                <HistoryList history={history} onClear={onClearHistory} onSelect={onSelectHistory} onDelete={onDeleteEntry} />
+              </nav>
+            </>
+          )}
+          {tab === "converter" && (
+            <div className="flex-1" />
+          )}
           <div className="p-4 text-xs" style={{ color: "var(--muted)" }}>
             <a
               href="https://freeappstore.online"
@@ -215,7 +264,9 @@ export function Shell({ children, history, onClearHistory, onDeleteEntry, onSele
             </a>
           </div>
         </aside>
-        <main className="flex-1 overflow-auto p-8">{children}</main>
+        <main className="flex-1 overflow-auto p-8">
+          {tab === "calculator" ? children : <Converter />}
+        </main>
       </div>
 
       {/* Mobile: header + main + dock */}
@@ -228,29 +279,39 @@ export function Shell({ children, history, onClearHistory, onDeleteEntry, onSele
             calculator
           </span>
           <div className="flex items-center gap-2">
-            <ModeToggle mode={mode} onChange={onModeChange} />
-            <button
-              onClick={() => setShowHistory(!showHistory)}
-              className="rounded-lg px-3 py-1 text-xs font-medium transition-colors"
-              style={{
-                color: showHistory ? "var(--paper)" : "var(--accent)",
-                background: showHistory ? "var(--accent)" : "transparent",
-                border: `1px solid ${showHistory ? "var(--accent)" : "var(--line)"}`,
-              }}
-            >
-              History{history.length > 0 ? ` (${history.length})` : ""}
-            </button>
+            {tab === "calculator" && (
+              <>
+                <ModeToggle mode={mode} onChange={onModeChange} />
+                <button
+                  onClick={() => setShowHistory(!showHistory)}
+                  className="rounded-lg px-3 py-1 text-xs font-medium transition-colors"
+                  style={{
+                    color: showHistory ? "var(--paper)" : "var(--accent)",
+                    background: showHistory ? "var(--accent)" : "transparent",
+                    border: `1px solid ${showHistory ? "var(--accent)" : "var(--line)"}`,
+                  }}
+                >
+                  History{history.length > 0 ? ` (${history.length})` : ""}
+                </button>
+              </>
+            )}
           </div>
         </header>
-        {showHistory ? (
-          <main className="flex-1 overflow-auto py-2">
-            <HistoryList history={history} onClear={onClearHistory} onSelect={(entry) => {
-              onSelectHistory(entry);
-              setShowHistory(false);
-            }} onDelete={onDeleteEntry} />
-          </main>
+        {tab === "calculator" ? (
+          showHistory ? (
+            <main className="flex-1 overflow-auto py-2">
+              <HistoryList history={history} onClear={onClearHistory} onSelect={(entry) => {
+                onSelectHistory(entry);
+                setShowHistory(false);
+              }} onDelete={onDeleteEntry} />
+            </main>
+          ) : (
+            <main className="flex-1 overflow-auto p-4">{children}</main>
+          )
         ) : (
-          <main className="flex-1 overflow-auto p-4">{children}</main>
+          <main className="flex-1 overflow-auto">
+            <Converter />
+          </main>
         )}
         <nav
           className="flex items-center justify-around h-16 border-t shrink-0"
@@ -259,7 +320,7 @@ export function Shell({ children, history, onClearHistory, onDeleteEntry, onSele
             background: "var(--dock)",
           }}
         >
-          {/* Add dock items here */}
+          <TabBar tab={tab} onChange={onTabChange} />
         </nav>
       </div>
     </>
