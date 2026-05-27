@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Shell } from './components/Shell'
+import { calc, factorial, cleanDisplay, canAddDecimal } from './calc'
 
 export interface HistoryEntry {
   expression: string
@@ -14,11 +15,11 @@ const HISTORY_KEY = 'calculator-history'
 const MODE_KEY = 'calculator-mode'
 const MAX_HISTORY = 50
 
-function loadState() {
+function loadState(): { display: string; prev: number | null; op: string | null } | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
-    return JSON.parse(raw) as { display: string; prev: number | null; op: string | null }
+    return JSON.parse(raw)
   } catch { return null }
 }
 
@@ -26,7 +27,7 @@ function loadHistory(): HistoryEntry[] {
   try {
     const raw = localStorage.getItem(HISTORY_KEY)
     if (!raw) return []
-    return JSON.parse(raw) as HistoryEntry[]
+    return JSON.parse(raw)
   } catch { return [] }
 }
 
@@ -37,19 +38,10 @@ function loadMode(): CalcMode {
   } catch { return 'basic' }
 }
 
-function factorial(n: number): number {
-  if (n < 0 || !Number.isInteger(n)) return NaN
-  if (n <= 1) return 1
-  let result = 1
-  for (let i = 2; i <= n; i++) result *= i
-  return result
-}
-
 export default function App() {
-  const saved = loadState()
-  const [display, setDisplay] = useState(saved?.display ?? '0')
-  const [prev, setPrev] = useState<number | null>(saved?.prev ?? null)
-  const [op, setOp] = useState<string | null>(saved?.op ?? null)
+  const [display, setDisplay] = useState(() => loadState()?.display ?? '0')
+  const [prev, setPrev] = useState<number | null>(() => loadState()?.prev ?? null)
+  const [op, setOp] = useState<string | null>(() => loadState()?.op ?? null)
   const [fresh, setFresh] = useState(true)
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
   const [mode, setMode] = useState<CalcMode>(loadMode)
@@ -69,8 +61,9 @@ export default function App() {
   }, [mode])
 
   const input = (digit: string) => {
+    if (digit === '.' && !canAddDecimal(fresh ? '' : display)) return
     if (fresh) {
-      setDisplay(digit)
+      setDisplay(digit === '.' ? '0.' : digit)
       setFresh(false)
     } else {
       setDisplay(display === '0' && digit !== '.' ? digit : display + digit)
@@ -81,7 +74,7 @@ export default function App() {
     const current = parseFloat(display)
     if (prev !== null && op && !fresh) {
       const result = calc(prev, current, op)
-      setDisplay(String(result))
+      setDisplay(cleanDisplay(result))
       setPrev(result)
     } else {
       setPrev(current)
@@ -94,10 +87,10 @@ export default function App() {
     if (prev === null || !op) return
     const current = parseFloat(display)
     const result = calc(prev, current, op)
-    const resultStr = String(result)
+    const resultStr = cleanDisplay(result)
     setDisplay(resultStr)
     setHistory(h => [
-      { expression: `${prev} ${op} ${current}`, result: resultStr, timestamp: Date.now() },
+      { expression: `${cleanDisplay(prev)} ${op} ${cleanDisplay(current)}`, result: resultStr, timestamp: Date.now() },
       ...h,
     ].slice(0, MAX_HISTORY))
     setPrev(null)
@@ -113,20 +106,21 @@ export default function App() {
   }
 
   const percent = () => {
-    setDisplay(String(parseFloat(display) / 100))
+    setDisplay(cleanDisplay(parseFloat(display) / 100))
+    setFresh(true)
   }
 
   const negate = () => {
-    setDisplay(String(-parseFloat(display)))
+    setDisplay(cleanDisplay(-parseFloat(display)))
   }
 
   const applyUnary = (label: string, fn: (x: number) => number) => {
     const x = parseFloat(display)
     const result = fn(x)
-    const resultStr = String(result)
+    const resultStr = cleanDisplay(result)
     setDisplay(resultStr)
     setHistory(h => [
-      { expression: `${label}(${x})`, result: resultStr, timestamp: Date.now() },
+      { expression: `${label}(${cleanDisplay(x)})`, result: resultStr, timestamp: Date.now() },
       ...h,
     ].slice(0, MAX_HISTORY))
     setFresh(true)
@@ -136,7 +130,7 @@ export default function App() {
   const fromRad = (x: number) => useDeg ? (x * 180) / Math.PI : x
 
   const insertConstant = (value: number) => {
-    setDisplay(String(value))
+    setDisplay(cleanDisplay(value))
     setFresh(true)
   }
 
@@ -171,7 +165,7 @@ export default function App() {
             style={{ background: 'var(--panel)', border: '1px solid var(--line)' }}
           >
             <div className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
-              {prev !== null ? `${prev} ${op}` : ' '}
+              {prev !== null ? `${cleanDisplay(prev)} ${op}` : ' '}
             </div>
             <div
               className="display-font mt-1 font-bold"
@@ -187,7 +181,7 @@ export default function App() {
           {mode === 'scientific' && (
             <div className="grid grid-cols-5 gap-1.5 mb-2">
               <CalcBtn
-                label={inv ? '2nd' : '2nd'}
+                label="2nd"
                 style="function"
                 onClick={() => setInv(!inv)}
                 active={inv}
@@ -266,17 +260,6 @@ export default function App() {
       </div>
     </Shell>
   )
-}
-
-function calc(a: number, b: number, op: string): number {
-  switch (op) {
-    case '+': return a + b
-    case '−': return a - b
-    case '×': return a * b
-    case '÷': return b !== 0 ? a / b : 0
-    case 'xʸ': return Math.pow(a, b)
-    default: return b
-  }
 }
 
 function CalcBtn({ label, style, onClick, wide, active, small }: {

@@ -15,7 +15,7 @@
     "build": "pnpm --filter @calculator/web build",
     "preview": "pnpm --filter @calculator/web preview",
     "typecheck": "pnpm --filter @calculator/web exec tsc -b",
-    "test": "pnpm --filter @calculator/web exec tsc -b"
+    "test": "pnpm --filter @calculator/web test"
   },
   "repository": {
     "type": "git",
