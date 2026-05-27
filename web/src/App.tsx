@@ -313,8 +313,8 @@ export default function App() {
       mode={mode}
       onModeChange={toggleMode}
     >
-      <div className="flex flex-1 items-center justify-center p-4">
-        <div className={mode === 'scientific' ? 'w-full max-w-sm' : 'w-full max-w-xs'}>
+      <div className="flex flex-1 justify-center p-4 overflow-auto">
+        <div className={`my-auto ${mode === 'scientific' ? 'w-full max-w-sm' : 'w-full max-w-xs'}`}>
           {/* Display */}
           <div
             ref={displayRef}
