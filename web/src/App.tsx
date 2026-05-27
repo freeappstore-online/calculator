@@ -200,7 +200,6 @@ export default function App() {
     setFresh(true)
   }, [])
 
-  // Memory
   const memoryClear = useCallback(() => setMemory(0), [])
   const memoryRecall = useCallback(() => {
     setDisplay(cleanDisplay(memory))
@@ -215,7 +214,6 @@ export default function App() {
     setMemory(m => m - parseFloat(display))
   }, [display, isError])
 
-  // Parentheses
   const openParen = useCallback(() => {
     if (isError) return
     setParenStack(s => [...s, { prev, op }])
@@ -239,7 +237,6 @@ export default function App() {
     setFresh(true)
   }, [display, isError, op, parenStack, prev])
 
-  // Copy / Paste
   const copyDisplay = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(display)
@@ -259,7 +256,6 @@ export default function App() {
     } catch { /* clipboard not available */ }
   }, [])
 
-  // Keyboard
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
@@ -291,6 +287,10 @@ export default function App() {
 
   const clearHistory = useCallback(() => setHistory([]), [])
 
+  const deleteHistoryEntry = useCallback((index: number) => {
+    setHistory(h => h.filter((_, i) => i !== index))
+  }, [])
+
   const loadFromHistory = useCallback((entry: HistoryEntry) => {
     setDisplay(entry.result)
     setPrev(null)
@@ -309,16 +309,17 @@ export default function App() {
     <Shell
       history={history}
       onClearHistory={clearHistory}
+      onDeleteEntry={deleteHistoryEntry}
       onSelectHistory={loadFromHistory}
       mode={mode}
       onModeChange={toggleMode}
     >
-      <div className="flex flex-1 justify-center p-4 overflow-auto">
+      <div className="flex flex-1 justify-center p-2 md:p-4 overflow-auto">
         <div className={`my-auto ${mode === 'scientific' ? 'w-full max-w-sm' : 'w-full max-w-xs'}`}>
           {/* Display */}
           <div
             ref={displayRef}
-            className="relative mb-4 rounded-2xl px-5 py-4 text-right cursor-pointer select-none"
+            className="relative mb-2 md:mb-4 rounded-2xl px-4 py-3 md:px-5 md:py-4 text-right cursor-pointer select-none"
             style={{ background: 'var(--panel)', border: '1px solid var(--line)' }}
             onClick={copyDisplay}
             title="Click to copy"
@@ -326,7 +327,7 @@ export default function App() {
             <div className="flex items-center justify-between">
               <div className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
                 {parenDepth > 0 && <span style={{ color: 'var(--accent)' }}>{'('.repeat(parenDepth)} </span>}
-                {prev !== null ? `${cleanDisplay(prev)} ${op}` : ' '}
+                {prev !== null ? `${cleanDisplay(prev)} ${op}` : ' '}
               </div>
               {!fresh && !isError && (
                 <button
@@ -359,98 +360,77 @@ export default function App() {
           </div>
 
           {/* Memory bar */}
-          <div className={`grid gap-1.5 mb-2 ${mode === 'scientific' ? 'grid-cols-6' : 'grid-cols-4'}`}>
+          <div className={`grid gap-1 md:gap-1.5 mb-1.5 md:mb-2 ${mode === 'scientific' ? 'grid-cols-6' : 'grid-cols-4'}`}>
             <CalcBtn label="MC" style="function" onClick={memoryClear} small />
             <CalcBtn label="MR" style="function" onClick={memoryRecall} small active={memory !== 0} />
             <CalcBtn label="M+" style="function" onClick={memoryAdd} small />
             <CalcBtn label="M−" style="function" onClick={memorySub} small />
             {mode === 'scientific' && (
               <>
-                <CalcBtn label="(" style="function" onClick={openParen} small />
-                <CalcBtn label=")" style="function" onClick={closeParen} small active={parenDepth > 0} />
+                <CalcBtn label="(" style="function" onClick={openParen} small shortcut="(" />
+                <CalcBtn label=")" style="function" onClick={closeParen} small active={parenDepth > 0} shortcut=")" />
               </>
             )}
           </div>
 
           {/* Scientific buttons */}
           {mode === 'scientific' && (
-            <div className="grid grid-cols-5 gap-1.5 mb-2">
-              <CalcBtn
-                label="2nd"
-                style="function"
-                onClick={() => setInv(!inv)}
-                active={inv}
-                small
-              />
-              <CalcBtn
-                label={useDeg ? 'DEG' : 'RAD'}
-                style="function"
-                onClick={() => setUseDeg(!useDeg)}
-                small
-              />
+            <div className="grid grid-cols-5 gap-1 md:gap-1.5 mb-1.5 md:mb-2">
+              <CalcBtn label="2nd" style="function" onClick={() => setInv(!inv)} active={inv} small />
+              <CalcBtn label={useDeg ? 'DEG' : 'RAD'} style="function" onClick={() => setUseDeg(!useDeg)} small />
               <CalcBtn label="π" style="function" onClick={() => insertConstant(Math.PI)} small />
               <CalcBtn label="e" style="function" onClick={() => insertConstant(Math.E)} small />
               <CalcBtn label="x!" style="function" onClick={() => applyUnary('!', factorial)} small />
 
-              {inv ? (
-                <CalcBtn label="sin⁻¹" style="function" onClick={() => applyUnary('asin', x => radToDeg(Math.asin(x)))} small />
-              ) : (
-                <CalcBtn label="sin" style="function" onClick={() => applyUnary('sin', x => Math.sin(degToRad(x)))} small />
-              )}
-              {inv ? (
-                <CalcBtn label="cos⁻¹" style="function" onClick={() => applyUnary('acos', x => radToDeg(Math.acos(x)))} small />
-              ) : (
-                <CalcBtn label="cos" style="function" onClick={() => applyUnary('cos', x => Math.cos(degToRad(x)))} small />
-              )}
-              {inv ? (
-                <CalcBtn label="tan⁻¹" style="function" onClick={() => applyUnary('atan', x => radToDeg(Math.atan(x)))} small />
-              ) : (
-                <CalcBtn label="tan" style="function" onClick={() => applyUnary('tan', x => Math.tan(degToRad(x)))} small />
-              )}
-              {inv ? (
-                <CalcBtn label="eˣ" style="function" onClick={() => applyUnary('eˣ', x => Math.exp(x))} small />
-              ) : (
-                <CalcBtn label="ln" style="function" onClick={() => applyUnary('ln', Math.log)} small />
-              )}
-              {inv ? (
-                <CalcBtn label="10ˣ" style="function" onClick={() => applyUnary('10ˣ', x => Math.pow(10, x))} small />
-              ) : (
-                <CalcBtn label="log" style="function" onClick={() => applyUnary('log', Math.log10)} small />
-              )}
+              {inv
+                ? <CalcBtn label="sin⁻¹" style="function" onClick={() => applyUnary('asin', x => radToDeg(Math.asin(x)))} small />
+                : <CalcBtn label="sin" style="function" onClick={() => applyUnary('sin', x => Math.sin(degToRad(x)))} small />}
+              {inv
+                ? <CalcBtn label="cos⁻¹" style="function" onClick={() => applyUnary('acos', x => radToDeg(Math.acos(x)))} small />
+                : <CalcBtn label="cos" style="function" onClick={() => applyUnary('cos', x => Math.cos(degToRad(x)))} small />}
+              {inv
+                ? <CalcBtn label="tan⁻¹" style="function" onClick={() => applyUnary('atan', x => radToDeg(Math.atan(x)))} small />
+                : <CalcBtn label="tan" style="function" onClick={() => applyUnary('tan', x => Math.tan(degToRad(x)))} small />}
+              {inv
+                ? <CalcBtn label="eˣ" style="function" onClick={() => applyUnary('eˣ', x => Math.exp(x))} small />
+                : <CalcBtn label="ln" style="function" onClick={() => applyUnary('ln', Math.log)} small />}
+              {inv
+                ? <CalcBtn label="10ˣ" style="function" onClick={() => applyUnary('10ˣ', x => Math.pow(10, x))} small />
+                : <CalcBtn label="log" style="function" onClick={() => applyUnary('log', Math.log10)} small />}
 
               <CalcBtn label="√" style="function" onClick={() => applyUnary('√', Math.sqrt)} small />
               <CalcBtn label="x²" style="function" onClick={() => applyUnary('x²', x => x * x)} small />
               <CalcBtn label="x³" style="function" onClick={() => applyUnary('x³', x => x * x * x)} small />
-              <CalcBtn label="xʸ" style="operator" onClick={() => operate('xʸ')} active={op === 'xʸ' && fresh} small />
+              <CalcBtn label="xʸ" style="operator" onClick={() => operate('xʸ')} active={op === 'xʸ' && fresh} small shortcut="^" />
               <CalcBtn label="1/x" style="function" onClick={() => applyUnary('1/', x => x !== 0 ? 1 / x : NaN)} small />
             </div>
           )}
 
           {/* Main grid */}
-          <div className="grid grid-cols-4 gap-2">
-            <CalcBtn label="AC" style="function" onClick={clear} />
+          <div className="grid grid-cols-4 gap-1.5 md:gap-2">
+            <CalcBtn label="AC" style="function" onClick={clear} shortcut="Esc" />
             <CalcBtn label="+/−" style="function" onClick={negate} />
-            <CalcBtn label="%" style="function" onClick={percent} />
-            <CalcBtn label="÷" style="operator" onClick={() => operate('÷')} active={op === '÷' && fresh} />
+            <CalcBtn label="%" style="function" onClick={percent} shortcut="%" />
+            <CalcBtn label="÷" style="operator" onClick={() => operate('÷')} active={op === '÷' && fresh} shortcut="/" />
 
-            <CalcBtn label="7" onClick={() => input('7')} />
-            <CalcBtn label="8" onClick={() => input('8')} />
-            <CalcBtn label="9" onClick={() => input('9')} />
-            <CalcBtn label="×" style="operator" onClick={() => operate('×')} active={op === '×' && fresh} />
+            <CalcBtn label="7" onClick={() => input('7')} shortcut="7" />
+            <CalcBtn label="8" onClick={() => input('8')} shortcut="8" />
+            <CalcBtn label="9" onClick={() => input('9')} shortcut="9" />
+            <CalcBtn label="×" style="operator" onClick={() => operate('×')} active={op === '×' && fresh} shortcut="*" />
 
-            <CalcBtn label="4" onClick={() => input('4')} />
-            <CalcBtn label="5" onClick={() => input('5')} />
-            <CalcBtn label="6" onClick={() => input('6')} />
-            <CalcBtn label="−" style="operator" onClick={() => operate('−')} active={op === '−' && fresh} />
+            <CalcBtn label="4" onClick={() => input('4')} shortcut="4" />
+            <CalcBtn label="5" onClick={() => input('5')} shortcut="5" />
+            <CalcBtn label="6" onClick={() => input('6')} shortcut="6" />
+            <CalcBtn label="−" style="operator" onClick={() => operate('−')} active={op === '−' && fresh} shortcut="-" />
 
-            <CalcBtn label="1" onClick={() => input('1')} />
-            <CalcBtn label="2" onClick={() => input('2')} />
-            <CalcBtn label="3" onClick={() => input('3')} />
-            <CalcBtn label="+" style="operator" onClick={() => operate('+')} active={op === '+' && fresh} />
+            <CalcBtn label="1" onClick={() => input('1')} shortcut="1" />
+            <CalcBtn label="2" onClick={() => input('2')} shortcut="2" />
+            <CalcBtn label="3" onClick={() => input('3')} shortcut="3" />
+            <CalcBtn label="+" style="operator" onClick={() => operate('+')} active={op === '+' && fresh} shortcut="+" />
 
-            <CalcBtn label="0" onClick={() => input('0')} wide />
-            <CalcBtn label="." onClick={() => input('.')} />
-            <CalcBtn label="=" style="operator" onClick={equals} />
+            <CalcBtn label="0" onClick={() => input('0')} wide shortcut="0" />
+            <CalcBtn label="." onClick={() => input('.')} shortcut="." />
+            <CalcBtn label="=" style="operator" onClick={equals} shortcut="Enter" />
           </div>
         </div>
       </div>
@@ -458,15 +438,18 @@ export default function App() {
   )
 }
 
-function CalcBtn({ label, style, onClick, wide, active, small }: {
+function CalcBtn({ label, style, onClick, wide, active, small, shortcut }: {
   label: string
   style?: 'function' | 'operator'
   onClick: () => void
   wide?: boolean
   active?: boolean
   small?: boolean
+  shortcut?: string
 }) {
-  const base = `rounded-xl font-semibold transition-all active:scale-95 ${small ? 'py-2 text-xs' : 'py-3 text-lg'}`
+  const base = small
+    ? 'rounded-lg md:rounded-xl py-1.5 md:py-2 text-[11px] md:text-xs font-semibold transition-all active:scale-95'
+    : 'rounded-xl py-2.5 md:py-3 text-base md:text-lg font-semibold transition-all active:scale-95'
   const styles = {
     function: `bg-[var(--panel)] text-[var(--ink)] ${active ? 'ring-2 ring-[var(--accent)]' : ''}`,
     operator: active
@@ -479,6 +462,7 @@ function CalcBtn({ label, style, onClick, wide, active, small }: {
     <button
       className={`${base} ${styles[style ?? 'default']} ${wide ? 'col-span-2' : ''}`}
       onClick={onClick}
+      title={shortcut ? `Keyboard: ${shortcut}` : undefined}
     >
       {label}
     </button>
