@@ -1,11 +1,13 @@
 import { type ReactNode, useState } from "react";
-import type { HistoryEntry } from "../App";
+import type { HistoryEntry, CalcMode } from "../App";
 
 interface ShellProps {
   children: ReactNode;
   history: HistoryEntry[];
   onClearHistory: () => void;
   onSelectHistory: (entry: HistoryEntry) => void;
+  mode: CalcMode;
+  onModeChange: (mode: CalcMode) => void;
 }
 
 function formatTime(ts: number) {
@@ -66,7 +68,30 @@ function HistoryList({ history, onClear, onSelect }: {
   );
 }
 
-export function Shell({ children, history, onClearHistory, onSelectHistory }: ShellProps) {
+function ModeToggle({ mode, onChange }: { mode: CalcMode; onChange: (m: CalcMode) => void }) {
+  return (
+    <div
+      className="flex rounded-lg p-0.5 text-xs font-medium"
+      style={{ background: "var(--glass)", border: "1px solid var(--line)" }}
+    >
+      {(["basic", "scientific"] as const).map(m => (
+        <button
+          key={m}
+          onClick={() => onChange(m)}
+          className="rounded-md px-3 py-1 transition-colors capitalize"
+          style={{
+            background: mode === m ? "var(--accent)" : "transparent",
+            color: mode === m ? "white" : "var(--muted)",
+          }}
+        >
+          {m}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function Shell({ children, history, onClearHistory, onSelectHistory, mode, onModeChange }: ShellProps) {
   const [showHistory, setShowHistory] = useState(false);
 
   return (
@@ -83,6 +108,9 @@ export function Shell({ children, history, onClearHistory, onSelectHistory }: Sh
         >
           <div className="p-6 font-bold text-lg" style={{ fontFamily: "Fraunces, serif" }}>
             calculator
+          </div>
+          <div className="px-4 pb-3">
+            <ModeToggle mode={mode} onChange={onModeChange} />
           </div>
           <div className="px-4 pb-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
             History
@@ -114,17 +142,20 @@ export function Shell({ children, history, onClearHistory, onSelectHistory }: Sh
           <span className="font-bold" style={{ fontFamily: "Fraunces, serif" }}>
             calculator
           </span>
-          <button
-            onClick={() => setShowHistory(!showHistory)}
-            className="rounded-lg px-3 py-1 text-xs font-medium transition-colors"
-            style={{
-              color: showHistory ? "var(--paper)" : "var(--accent)",
-              background: showHistory ? "var(--accent)" : "transparent",
-              border: `1px solid ${showHistory ? "var(--accent)" : "var(--line)"}`,
-            }}
-          >
-            History{history.length > 0 ? ` (${history.length})` : ""}
-          </button>
+          <div className="flex items-center gap-2">
+            <ModeToggle mode={mode} onChange={onModeChange} />
+            <button
+              onClick={() => setShowHistory(!showHistory)}
+              className="rounded-lg px-3 py-1 text-xs font-medium transition-colors"
+              style={{
+                color: showHistory ? "var(--paper)" : "var(--accent)",
+                background: showHistory ? "var(--accent)" : "transparent",
+                border: `1px solid ${showHistory ? "var(--accent)" : "var(--line)"}`,
+              }}
+            >
+              History{history.length > 0 ? ` (${history.length})` : ""}
+            </button>
+          </div>
         </header>
         {showHistory ? (
           <main className="flex-1 overflow-auto py-2">

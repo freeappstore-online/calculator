@@ -7,8 +7,11 @@ export interface HistoryEntry {
   timestamp: number
 }
 
+export type CalcMode = 'basic' | 'scientific'
+
 const STORAGE_KEY = 'calculator-state'
 const HISTORY_KEY = 'calculator-history'
+const MODE_KEY = 'calculator-mode'
 const MAX_HISTORY = 50
 
 function loadState() {
@@ -27,6 +30,21 @@ function loadHistory(): HistoryEntry[] {
   } catch { return [] }
 }
 
+function loadMode(): CalcMode {
+  try {
+    const raw = localStorage.getItem(MODE_KEY)
+    return raw === 'scientific' ? 'scientific' : 'basic'
+  } catch { return 'basic' }
+}
+
+function factorial(n: number): number {
+  if (n < 0 || !Number.isInteger(n)) return NaN
+  if (n <= 1) return 1
+  let result = 1
+  for (let i = 2; i <= n; i++) result *= i
+  return result
+}
+
 export default function App() {
   const saved = loadState()
   const [display, setDisplay] = useState(saved?.display ?? '0')
@@ -34,6 +52,9 @@ export default function App() {
   const [op, setOp] = useState<string | null>(saved?.op ?? null)
   const [fresh, setFresh] = useState(true)
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory)
+  const [mode, setMode] = useState<CalcMode>(loadMode)
+  const [useDeg, setUseDeg] = useState(true)
+  const [inv, setInv] = useState(false)
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ display, prev, op }))
@@ -42,6 +63,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history))
   }, [history])
+
+  useEffect(() => {
+    localStorage.setItem(MODE_KEY, mode)
+  }, [mode])
 
   const input = (digit: string) => {
     if (fresh) {
@@ -95,6 +120,26 @@ export default function App() {
     setDisplay(String(-parseFloat(display)))
   }
 
+  const applyUnary = (label: string, fn: (x: number) => number) => {
+    const x = parseFloat(display)
+    const result = fn(x)
+    const resultStr = String(result)
+    setDisplay(resultStr)
+    setHistory(h => [
+      { expression: `${label}(${x})`, result: resultStr, timestamp: Date.now() },
+      ...h,
+    ].slice(0, MAX_HISTORY))
+    setFresh(true)
+  }
+
+  const toRad = (x: number) => useDeg ? (x * Math.PI) / 180 : x
+  const fromRad = (x: number) => useDeg ? (x * 180) / Math.PI : x
+
+  const insertConstant = (value: number) => {
+    setDisplay(String(value))
+    setFresh(true)
+  }
+
   const clearHistory = useCallback(() => {
     setHistory([])
   }, [])
@@ -106,16 +151,27 @@ export default function App() {
     setFresh(true)
   }, [])
 
+  const toggleMode = useCallback((m: CalcMode) => {
+    setMode(m)
+    setInv(false)
+  }, [])
+
   return (
-    <Shell history={history} onClearHistory={clearHistory} onSelectHistory={loadFromHistory}>
+    <Shell
+      history={history}
+      onClearHistory={clearHistory}
+      onSelectHistory={loadFromHistory}
+      mode={mode}
+      onModeChange={toggleMode}
+    >
       <div className="flex flex-1 items-center justify-center p-4">
-        <div className="w-full max-w-xs">
+        <div className={mode === 'scientific' ? 'w-full max-w-sm' : 'w-full max-w-xs'}>
           <div
             className="mb-4 rounded-2xl px-5 py-4 text-right"
             style={{ background: 'var(--panel)', border: '1px solid var(--line)' }}
           >
             <div className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
-              {prev !== null ? `${prev} ${op}` : ' '}
+              {prev !== null ? `${prev} ${op}` : ' '}
             </div>
             <div
               className="display-font mt-1 font-bold"
@@ -127,6 +183,59 @@ export default function App() {
               {display}
             </div>
           </div>
+
+          {mode === 'scientific' && (
+            <div className="grid grid-cols-5 gap-1.5 mb-2">
+              <CalcBtn
+                label={inv ? '2nd' : '2nd'}
+                style="function"
+                onClick={() => setInv(!inv)}
+                active={inv}
+                small
+              />
+              <CalcBtn
+                label={useDeg ? 'DEG' : 'RAD'}
+                style="function"
+                onClick={() => setUseDeg(!useDeg)}
+                small
+              />
+              <CalcBtn label="π" style="function" onClick={() => insertConstant(Math.PI)} small />
+              <CalcBtn label="e" style="function" onClick={() => insertConstant(Math.E)} small />
+              <CalcBtn label="x!" style="function" onClick={() => applyUnary('!', factorial)} small />
+
+              {inv ? (
+                <CalcBtn label="sin⁻¹" style="function" onClick={() => applyUnary('asin', x => fromRad(Math.asin(x)))} small />
+              ) : (
+                <CalcBtn label="sin" style="function" onClick={() => applyUnary('sin', x => Math.sin(toRad(x)))} small />
+              )}
+              {inv ? (
+                <CalcBtn label="cos⁻¹" style="function" onClick={() => applyUnary('acos', x => fromRad(Math.acos(x)))} small />
+              ) : (
+                <CalcBtn label="cos" style="function" onClick={() => applyUnary('cos', x => Math.cos(toRad(x)))} small />
+              )}
+              {inv ? (
+                <CalcBtn label="tan⁻¹" style="function" onClick={() => applyUnary('atan', x => fromRad(Math.atan(x)))} small />
+              ) : (
+                <CalcBtn label="tan" style="function" onClick={() => applyUnary('tan', x => Math.tan(toRad(x)))} small />
+              )}
+              {inv ? (
+                <CalcBtn label="eˣ" style="function" onClick={() => applyUnary('eˣ', x => Math.exp(x))} small />
+              ) : (
+                <CalcBtn label="ln" style="function" onClick={() => applyUnary('ln', Math.log)} small />
+              )}
+              {inv ? (
+                <CalcBtn label="10ˣ" style="function" onClick={() => applyUnary('10ˣ', x => Math.pow(10, x))} small />
+              ) : (
+                <CalcBtn label="log" style="function" onClick={() => applyUnary('log', Math.log10)} small />
+              )}
+
+              <CalcBtn label="√" style="function" onClick={() => applyUnary('√', Math.sqrt)} small />
+              <CalcBtn label="x²" style="function" onClick={() => applyUnary('x²', x => x * x)} small />
+              <CalcBtn label="x³" style="function" onClick={() => applyUnary('x³', x => x * x * x)} small />
+              <CalcBtn label="xʸ" style="operator" onClick={() => operate('xʸ')} active={op === 'xʸ' && fresh} small />
+              <CalcBtn label="1/x" style="function" onClick={() => applyUnary('1/', x => x !== 0 ? 1 / x : 0)} small />
+            </div>
+          )}
 
           <div className="grid grid-cols-4 gap-2">
             <CalcBtn label="AC" style="function" onClick={clear} />
@@ -165,20 +274,22 @@ function calc(a: number, b: number, op: string): number {
     case '−': return a - b
     case '×': return a * b
     case '÷': return b !== 0 ? a / b : 0
+    case 'xʸ': return Math.pow(a, b)
     default: return b
   }
 }
 
-function CalcBtn({ label, style, onClick, wide, active }: {
+function CalcBtn({ label, style, onClick, wide, active, small }: {
   label: string
   style?: 'function' | 'operator'
   onClick: () => void
   wide?: boolean
   active?: boolean
+  small?: boolean
 }) {
-  const base = 'rounded-xl py-3 text-lg font-semibold transition-all active:scale-95'
+  const base = `rounded-xl font-semibold transition-all active:scale-95 ${small ? 'py-2 text-xs' : 'py-3 text-lg'}`
   const styles = {
-    function: 'bg-[var(--panel)] text-[var(--ink)]',
+    function: `bg-[var(--panel)] text-[var(--ink)] ${active ? 'ring-2 ring-[var(--accent)]' : ''}`,
     operator: active
       ? 'bg-[var(--ink)] text-[var(--paper)]'
       : 'bg-[var(--accent)] text-white',
