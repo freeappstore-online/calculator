@@ -9,6 +9,13 @@ export function calc(a: number, b: number, op: string): number {
   }
 }
 
+export function backspace(display: string): string {
+  if (display === 'Error' || display.length <= 1) return '0'
+  const next = display.slice(0, -1)
+  if (next === '' || next === '-') return '0'
+  return next
+}
+
 export function factorial(n: number): number {
   if (n < 0 || !Number.isInteger(n)) return NaN
   if (n <= 1) return 1
