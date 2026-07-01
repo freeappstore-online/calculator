@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/types.ts","./src/components/shell.tsx"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/calc.test.ts","./src/calc.ts","./src/convert.test.ts","./src/convert.ts","./src/main.tsx","./src/types.ts","./src/components/converter.tsx","./src/components/shell.tsx"],"version":"5.9.3"}
