@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "react": "^19",
-    "react-dom": "^19"
+    "react-dom": "^19",
+    "@freeappstore/sdk": "^0.16.41"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1",
@@ -21,6 +22,7 @@
     "tailwindcss": "^4.1",
     "typescript": "^5.7",
     "vite": "^6",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.7",
+    "vite-plugin-pwa": "^1.0"
   }
 }
